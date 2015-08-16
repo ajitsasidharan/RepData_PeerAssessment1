@@ -4,22 +4,117 @@ output:
   html_document:
     keep_md: true
 ---
-
-
 ## Loading and preprocessing the data
-
-
+```{r loadFile}
+# Load the data file for assignment into Variable dataSet
+dataSet<-read.csv("activity.csv")
+# Load the libraries needed in the assignment.
+library(plyr)
+library(reshape2)
+library(dplyr)
+library(ggplot2)
+library(tidyr)
+library(knitr)
+library(lattice)
+```
 
 ## What is mean total number of steps taken per day?
 
+```{r calculateMeanStepsPerDay}
+# Convert date column of data.frame to type Date
+dataSet<-transform(dataSet,date=as.Date(dataSet$date))
 
+# Proceeding to plot the histogram
+dataSet%>%
+group_by(date)%>%
+summarise(mean=mean(steps,na.rm=TRUE)) %>%
+    ggplot(aes(date,mean))+geom_bar(stat="identity") + 
+    ggtitle("BAR PLOT") +
+    scale_x_date(breaks=unique(dataSet$date)[seq(from=0,to=61,by=15)],name="Date") +
+    scale_y_continuous("Mean of total number of steps per day")
+dataSet%>%
+    group_by(date)%>%
+    summarise(mean=mean(steps,na.rm=TRUE),median=median(steps,na.rm=TRUE)) %>%
+    kable()
+```
 
 ## What is the average daily activity pattern?
 
+```{r averageDailyActivityPattern}
+dataSet %>%
+	group_by(interval) %>%
+	summarise(mean=mean(steps,na.rm=TRUE)) %>%
+	ggplot(aes(x=interval,y=mean),ymax=mean) + geom_line()  +
+    scale_x_continuous(name="Interval") +
+    scale_y_continuous(name="Mean of steps per interval") +
+    ggtitle("Average daily activity pattern per interval")
+```
 
+```{r computeMaximumNumberOfSteps} 
+maxVal<-subset(dataSet,dataSet$steps==max(dataSet$steps,na.rm=TRUE))
+sprintf("The 5 minute interval %d contains the maximum number of %d steps", maxVal$interval, maxVal$steps)
+```
 
-## Imputing missing values
+## Inputing missing values
+```{r computeSumOfNAs} 
+sumOfNAs<-sum(is.na(dataSet))
+sprintf("There are %d rows with missing values in the dataset", sumOfNAs)
+```
+### Proceeding to implement the following strategy to fill all of the missing values in the dataset
+    * Identify the rows with missing values
+    * Identify the mean values per interval for that row
+    * Update the data set with the value
+```{r substituteNAsWithMean}
+    # Creating a new DataSet
+    dataSetWithoutNAs<-dataSet
+    # Function to calculate the mean value.
+    # The input to the function is the dataSet and the interval for which mean has to be calculated
+    meanPerInterval<-function(dataSet, intvl) mean(na.omit(subset(dataSet,dataSet$interval==intvl))$steps)
+    # Identify the rows in the data set with missing values.
+    nullRowIndex<-which(is.na(dataSetWithoutNAs))
+    # Iterate through the rows
+    for (i in nullRowIndex) {
+        dataSetWithoutNAs[i,]$steps<-meanPerInterval(dataSetWithoutNAs,dataSetWithoutNAs[i,]$interval)
+    }
+```
+```{r calculateMeanStepsPerDayWithoutNull}
+dataSetWithoutNAs%>%
+group_by(date)%>%
+summarise(mean=mean(steps,na.rm=TRUE)) %>%
+ggplot(aes(date,mean))+geom_bar(stat="identity") + ggtitle("Mean total number of steps taken per day")
+dataSetWithoutNAs%>%
+    group_by(date)%>%
+    summarise(mean=mean(steps,na.rm=TRUE),median=median(steps,na.rm=TRUE)) %>%
+    kable()
+```
 
-
-
+```{r computeMaximumNumberOfStepsWithoutNull} 
+maxVal<-subset(dataSetWithoutNAs,dataSetWithoutNAs$steps==max(dataSetWithoutNAs$steps))
+sprintf("The 5 minute interval %d contains the maximum number of %d steps", maxVal$interval, maxVal$steps)
+```
 ## Are there differences in activity patterns between weekdays and weekends?
+```{r checkActivityTypePerDay} 
+# Create a new column Day and assign it values "Weekday" or "Weekend" depending on
+# the value of date. Using weekday() function for this.
+rownum<-nrow(dataSetWithoutNAs)
+for(i in 1:rownum) {
+	dayType=weekdays(as.Date(dataSetWithoutNAs[i,]$date))
+	if(dayType=="Sunday" || dayType=="Saturday") {
+		dataSetWithoutNAs[i,4]<-"Weekend"
+	} else {
+		dataSetWithoutNAs[i,4]<-"Weekday"
+	}
+}
+names(dataSetWithoutNAs)[4]<-"Day"
+
+dataSetDays <- ddply(dataSetWithoutNAs,
+              .(interval, Day), 
+              summarize, 
+              mean = mean(steps, na.rm=TRUE))
+xyplot(mean~interval|Day,data=dataSetDays,
+       type='l',layout=c(1,2),xlab="Interval",ylab="Number of steps") 
+
+```
+
+
+
